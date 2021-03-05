@@ -1,24 +1,45 @@
-
 #include "stdafx.h"
+
+#include <codecvt>
 
 using namespace jsoncons;
 namespace fs = std::filesystem;
 
-LPCWSTR vcsJsonFileQuery = L"SELECT `JsonFile`.`JsonFile`, `JsonFile`.`File`, `JsonFile`.`ElementPath`, `JsonFile`.`VerifyPath`, "
-L"`JsonFile`.`Value`, `JsonFile`.`Flags`, `JsonFile`.`Component_` FROM `JsonFile`,`Component`"
-L"WHERE `JsonFile`.`Component_`=`Component`.`Component` ORDER BY `File`, `Sequence`";
+LPCWSTR vcsJsonFileQuery =
+    L"SELECT `JsonFile`.`JsonFile`, `JsonFile`.`File`, `JsonFile`.`ElementPath`, `JsonFile`.`VerifyPath`, "
+    L"`JsonFile`.`Value`, `JsonFile`.`Flags`, `JsonFile`.`Component_` FROM `JsonFile`,`Component`"
+    L"WHERE `JsonFile`.`Component_`=`Component`.`Component` ORDER BY `File`, `Sequence`";
+
 enum eJsonFileQuery { jfqId = 1, jfqFile, jfqElementPath, jfqVerifyPath, jfqValue, jfqFlags, jfqComponent };
 
 static HRESULT UpdateJsonFile(
     __in_z LPCWSTR wzId,
-    __in_z LPCWSTR wzFile,
+    __in_z std::filesystem::path wzFile,
     __in_z LPCWSTR wzElementPath,
     __in_z LPCWSTR wzVerifyPath,
-    __in_z LPCWSTR wzValue,
+    __in_z std::wstring_view wzValue,
     __in int iFlags,
-    __in_z LPCWSTR wzComponent
+    __in_z std::wstring_view wzComponent
 );
-void SetJsonPathValue(__in_z LPCWSTR wzFile, std::string sElementPath, __in_z LPCWSTR wzValue);
+HRESULT SetJsonPathValue(std::filesystem::path const& wzFile, std::string_view sElementPath,
+                      __in_z std::wstring_view wzValue, std::bitset<32> flags);
+
+std::string ConvertToAnsi(std::wstring_view data)
+{
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> convert;
+    return convert.to_bytes(data.data(), data.data() + data.length());
+}
+
+std::string ConvertToAnsi(std::wstring const& data)
+{
+    return ConvertToAnsi(std::wstring_view{data});
+}
+
+std::string ConvertToAnsi(std::filesystem::path const& data)
+{
+    return ConvertToAnsi(data.native());
+}
+
 
 const int FLAG_DELETEVALUE = 0;
 const int FLAG_SETVALUE = 1;
@@ -26,17 +47,20 @@ const int FLAG_ADDARRAYVALUE = 2;
 const int FLAG_UNINSTALL = 3;
 const int FLAG_PRESERVEDATE = 4;
 const int FLAG_JSONPOINTER = 5;
+const int FLAG_JSONBOOL = 6;
+const int FLAG_JSONNUMBER = 7;
+const int FLAG_JSONOBJECT = 8;
+const int FLAG_JSONNULL = 9;
 
 
 extern "C" UINT WINAPI JsonFile(
     __in MSIHANDLE hInstall
 )
 {
-    HRESULT hr = S_OK;
-    hr = WcaInitialize(hInstall, "JsonFile");
+    HRESULT hr = WcaInitialize(hInstall, "JsonFile");
 
     WcaLog(LOGMSG_STANDARD, "Entered JsonFile CA");
-        
+
     WcaLog(LOGMSG_STANDARD, "Created PMSIHANDLE hView");
     PMSIHANDLE hView;
 
@@ -45,19 +69,28 @@ extern "C" UINT WINAPI JsonFile(
 
     WcaLog(LOGMSG_STANDARD, "MSIHANDLE's created for JsonFile CA");
 
-    LPWSTR sczId = NULL;
-    LPWSTR sczFile = NULL;
-    LPWSTR sczElementPath = NULL;
-    LPWSTR sczVerifyPath = NULL;
-    LPWSTR sczValue = NULL;
-    LPWSTR sczComponent = NULL;
+    LPWSTR sczId = nullptr;
+    LPWSTR sczFile = nullptr;
+    LPWSTR sczElementPath = nullptr;
+    LPWSTR sczVerifyPath = nullptr;
+    LPWSTR sczValue = nullptr;
+    LPWSTR sczComponent = nullptr;
 
     INSTALLSTATE isInstalled;
     INSTALLSTATE isAction;
-
+    bool initializedWow64{false};
+    bool enabled64BitRedirection{false};
     int iFlags = 0;
-        
+
     ExitOnFailure(hr, "Failed to initialize JsonFile.");
+
+    hr = WcaInitializeWow64();
+    ExitOnFailure(hr, "Failed to initialize Wow64.");
+    initializedWow64 = true;
+
+    hr = WcaDisableWow64FSRedirection();
+    ExitOnFailure(hr, "Failed to disable Wow64 redirection.");
+    enabled64BitRedirection = true;
 
     // anything to do?
     if (S_OK != WcaTableExists(L"JsonFile"))
@@ -105,10 +138,12 @@ extern "C" UINT WINAPI JsonFile(
         if (WcaIsInstalling(isInstalled, isAction))
         {
             WcaLog(LOGMSG_STANDARD, "Updating JsonFile for Id:%ls", sczId);
-            hr = UpdateJsonFile(sczId, sczFile, sczElementPath, sczVerifyPath, sczValue, iFlags, sczComponent);
+            hr = UpdateJsonFile(sczId, std::filesystem::path{sczFile}, sczElementPath, sczVerifyPath, sczValue, iFlags,
+                                sczComponent);
             ExitOnFailure2(hr, "Failed while navigating path: %S for row: %S", sczFile, sczId);
         }
-        else if (WcaIsUninstalling(isInstalled, isAction)) {
+        else if (WcaIsUninstalling(isInstalled, isAction))
+        {
             // Don't really worry about this yet as file is deleted on uninstall
         }
     }
@@ -121,12 +156,20 @@ extern "C" UINT WINAPI JsonFile(
     ExitOnFailure(hr, "Failure occured while processing JsonFile table");
 
 LExit:
-    ReleaseStr(sczId);
-    ReleaseStr(sczFile);
-    ReleaseStr(sczElementPath);
-    ReleaseStr(sczVerifyPath);
-    ReleaseStr(sczValue);
-    ReleaseStr(sczComponent);
+    if (enabled64BitRedirection)
+    {
+        WcaRevertWow64FSRedirection();
+    }
+    if (initializedWow64)
+    {
+        WcaFinalizeWow64();
+    }
+    ReleaseStr(sczId)
+    ReleaseStr(sczFile)
+    ReleaseStr(sczElementPath)
+    ReleaseStr(sczVerifyPath)
+    ReleaseStr(sczValue)
+    ReleaseStr(sczComponent)
 
     if (hView)
     {
@@ -147,26 +190,23 @@ LExit:
 
 static HRESULT UpdateJsonFile(
     __in_z LPCWSTR wzId,
-    __in_z LPCWSTR wzFile,
+    __in_z std::filesystem::path wzFile,
     __in_z LPCWSTR wzElementPath,
     __in_z LPCWSTR wzVerifyPath,
-    __in_z LPCWSTR wzValue,
+    __in_z std::wstring_view wzValue,
     __in int iFlags,
-    __in_z LPCWSTR wzComponent
+    __in_z std::wstring_view wzComponent
 )
 {
     HRESULT hr = S_OK;
     ojson j = NULL;
     ::SetLastError(0);
 
-    _bstr_t bFile(wzFile);
-    char* cFile = bFile;
 
-    _bstr_t bValue(wzValue);
-    char* cValue = bValue;
+    auto const cFile{ConvertToAnsi(wzFile)};
 
-    std::ifstream is(cFile);
-    WcaLog(LOGMSG_STANDARD, "Created wifstream, %s", cFile);
+    std::ifstream is{cFile};
+    WcaLog(LOGMSG_STANDARD, "Created ifstream, %s", cFile.c_str());
 
     json_reader reader(is);
 
@@ -193,50 +233,90 @@ static HRESULT UpdateJsonFile(
     std::string elementPath(cElementPath);
 
     WcaLog(LOGMSG_STANDARD, "Found ElementPath as %s", elementPath.c_str());
-    elementPath = std::regex_replace(elementPath, std::regex("\\[(\\\\\\[)\\]"), "[");
-    elementPath = std::regex_replace(elementPath, std::regex("\\[(\\\\\\])\\]"), "]");
+    elementPath = std::regex_replace(elementPath, std::regex(R"(\[(\\\[)\])"), "[");
+    elementPath = std::regex_replace(elementPath, std::regex(R"(\[(\\\])\])"), "]");
     WcaLog(LOGMSG_STANDARD, "Updated ElementPath to %s", elementPath.c_str());
 
-    if (flags.test(FLAG_SETVALUE)) {
-        SetJsonPathValue(wzFile, elementPath.c_str(), wzValue);
+    if (flags.test(FLAG_SETVALUE))
+    {
+        hr = SetJsonPathValue(wzFile, elementPath, wzValue, flags);
     }
-    else if (flags.test(FLAG_DELETEVALUE)) {
+    else if (flags.test(FLAG_DELETEVALUE))
+    {
+        hr = HRESULT_FROM_WIN32(ERROR_CALL_NOT_IMPLEMENTED);
+        WcaLog(LOGMSG_STANDARD, "Action deleteValue is not yet supported");
+    }
+    else if (flags.test(FLAG_JSONPOINTER))
+    {
+        hr = HRESULT_FROM_WIN32(ERROR_CALL_NOT_IMPLEMENTED);
+        WcaLog(LOGMSG_STANDARD, "Type jsonPointer is not yet supported");
+    }
 
-    }
-    else if (flags.test(FLAG_JSONPOINTER)) {
-
-    }
 
     return hr;
 }
 
 using namespace jsoncons::jsonpath;
 
-void SetJsonPathValue(__in_z LPCWSTR wzFile, std::string sElementPath, __in_z LPCWSTR wzValue) {
-
+HRESULT SetJsonPathValue(__in_z std::filesystem::path const& wzFile, std::string_view sElementPath,
+                      __in_z std::wstring_view wzValue, std::bitset<32> flags)
+{
     try
     {
-        ojson j;
+        auto cFile{ConvertToAnsi(wzFile)};
 
-        _bstr_t bFile(wzFile);
-        char* cFile = bFile;
-
-        _bstr_t bValue(wzValue);
-        char* cValue = bValue;
-
-        if (fs::exists(fs::path (wzFile))) {
-            std::ifstream is(cFile);
+        if (fs::exists(fs::path(wzFile)))
+        {
+            std::ifstream is{cFile};
+            ojson j;
 
             is >> j;
-            WcaLog(LOGMSG_STANDARD, "About to replace value: |%s| {%s}", sElementPath.c_str(), cValue);
 
-            json_replace(j, sElementPath.c_str(), cValue);
+            if (flags.test(FLAG_JSONBOOL))
+            {
+                auto cValue{wzValue == std::wstring_view{ L"true" } || wzValue == std::wstring_view{ L"1" } };
 
-            WcaLog(LOGMSG_STANDARD, "Updating the json %s with values %s.", sElementPath.c_str(), cValue);
+                WcaLog(LOGMSG_STANDARD, "About to replace boolean value: |%s| {\"%S\" as  %s}", sElementPath.data(),
+                       wzValue.data(), (cValue ? "true" : "false"));
 
-            std::ofstream os(wzFile,
-                std::ios_base::out | std::ios_base::trunc);
-            WcaLog(LOGMSG_STANDARD, "created output stream");
+                json_replace(j, sElementPath, cValue);
+                WcaLog(LOGMSG_STANDARD, "Updating the json %s with value %s.", sElementPath.data(),
+                       (cValue ? "true" : "false"));
+            }
+            else if (flags.test(FLAG_JSONNUMBER))
+            {
+                auto cValue{std::stoi(ConvertToAnsi(wzValue))};
+
+                WcaLog(LOGMSG_STANDARD, "About to replace number value: |%s| {\"%S\" as %ld}", sElementPath.data(),
+                       wzValue.data(), cValue);
+
+                json_replace(j, sElementPath, cValue);
+                WcaLog(LOGMSG_STANDARD, "Updating the json %s with value %ld.", sElementPath.data(), cValue);
+            }
+            else if (flags.test(FLAG_JSONOBJECT))
+            {
+                throw new std::runtime_error("Object type is not yet supported.");
+            }
+            else if (flags.test(FLAG_JSONNULL))
+            {
+                WcaLog(LOGMSG_STANDARD, "About to replace null value: |%s|", sElementPath.data());
+
+                json_replace(j, sElementPath, nullptr);
+                WcaLog(LOGMSG_STANDARD, "Updating the json %s with null value.", sElementPath.data());
+            }
+            else
+            {
+                auto cValue{ConvertToAnsi(wzValue)};
+                WcaLog(LOGMSG_STANDARD, "About to replace text value: |%s| {\"%s\"}", sElementPath.data(), cValue.c_str());
+
+                json_replace(j, sElementPath, cValue);
+                WcaLog(LOGMSG_STANDARD, "Updating the json %s with value %s.", sElementPath.data(), cValue.c_str());
+            }
+
+            WcaLog(LOGMSG_STANDARD, "creating output stream %s", cFile.c_str());
+            std::ofstream os(cFile,
+                             std::ios_base::out | std::ios_base::trunc);
+            WcaLog(LOGMSG_STANDARD, "created output stream %s", cFile.c_str());
 
             pretty_print(j).dump(os);
             WcaLog(LOGMSG_STANDARD, "dumped output stream");
@@ -244,13 +324,15 @@ void SetJsonPathValue(__in_z LPCWSTR wzFile, std::string sElementPath, __in_z LP
             os.close();
             WcaLog(LOGMSG_STANDARD, "closed output stream");
         }
-        else {
-            WcaLog(LOGMSG_STANDARD, "Unable to locate file: %s", cValue);
+        else
+        {
+            WcaLog(LOGMSG_STANDARD, "Unable to locate file: %s", cFile.c_str());
         }
     }
     catch (std::exception& e)
     {
         WcaLog(LOGMSG_STANDARD, "encountered error %s", e.what());
-        throw;
+        return HRESULT_FROM_WIN32(ERROR_INSTALL_FAILED);
     }
+    return S_OK;
 }

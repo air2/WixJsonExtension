@@ -66,6 +66,7 @@ namespace NerdyDuck.Wix.JsonExtension
 			int action = CompilerCore.IntegerNotSet;
 			int? sequence = 1;
 			int selectionLanguage = CompilerCore.IntegerNotSet;
+			int valueType = CompilerCore.IntegerNotSet;
 			string verifyPath = null;
 
 			if (node.Attributes != null)
@@ -116,6 +117,10 @@ namespace NerdyDuck.Wix.JsonExtension
 							case "SelectionLanguage": 
 								// Specify whether the JSON object should use JSON Path (default) or JSON Pointer as the query language for ElementPath.
 								selectionLanguage = ValidateSelectionLanguage(node, sourceLineNumbers, attribute, ref flags);
+								break;
+							case "ValueType": 
+								// Specify whether the JSON object should use JSON Path (default) or JSON Pointer as the query language for ElementPath.
+								valueType = ValidateValueType(node, sourceLineNumbers, attribute, ref flags);
 								break;
 							case "VerifyPath": 
 								// The path to the element being modified. This is required for 'delete' actions. For 'set' actions, VerifyPath is used to decide if the element already exists.
@@ -233,6 +238,49 @@ namespace NerdyDuck.Wix.JsonExtension
 			}
 
 			return selectionLanguage;
+		}
+
+		private int ValidateValueType(XmlNode node, SourceLineNumberCollection sourceLineNumbers,
+			XmlAttribute attribute, ref int flags)
+		{
+			int valueType;
+			string valueTypeValue = Core.GetAttributeValue(sourceLineNumbers, attribute);
+			if (valueTypeValue.Length == 0)
+			{
+				valueType = 1;
+			}
+			else
+			{
+				switch (valueTypeValue)
+				{
+					case "string":
+						valueType = 1;
+						break;
+					case "bool":
+						flags |= 64;
+						valueType = 2;
+						break;
+					case "number":
+						flags |= 128;
+						valueType = 3;
+						break;
+					case "object":
+						flags |= 256;
+						valueType = 4;
+						break;
+					case "null":
+						flags |= 512;
+						valueType = 5;
+						break;
+					default:
+						Core.OnMessage(WixErrors.IllegalAttributeValue(sourceLineNumbers, node.Name,
+							"ValueType", valueTypeValue, "string", "bool", "number","object", "null"));
+						valueType = CompilerCore.IllegalInteger;
+						break;
+				}
+			}
+
+			return valueType;
 		}
 
 		private int ValidateOn(XmlNode node, SourceLineNumberCollection sourceLineNumbers, XmlAttribute attribute,

@@ -116,6 +116,42 @@
           </xs:restriction>
         </xs:simpleType>
       </xs:attribute>
+      <xs:attribute name="ValueType">
+        <xs:annotation>
+          <xs:documentation>
+            Specify the type of the json value
+          </xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:restriction base="xs:NMTOKEN">
+            <xs:enumeration value="string">
+              <xs:annotation>
+                <xs:documentation>Default</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="bool">
+              <xs:annotation>
+                <xs:documentation>Specify true or 1 in the value for true. Everything not equal true (case-sensitive) or 1 is considered false</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration> 
+            <xs:enumeration value="number">
+              <xs:annotation>
+                <xs:documentation>Convert the value to a 32bit signed integer</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="object">
+              <xs:annotation>
+                <xs:documentation>Currently not implemented</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="null">
+              <xs:annotation>
+                <xs:documentation>Set the value to NULL</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
       <xs:attribute name="VerifyPath" type="xs:string">
         <xs:annotation>
           <xs:documentation>The path to the element being modified. This is required for 'delete' actions. For 'set' actions, VerifyPath is used to decide if the element already exists. The semantic can be either JSON Path or JSON Pointer language, as specified in the SelectionLanguage attribute. Note that this is a formatted field and therefore, square brackets in the path must be escaped. In addition, JSON Path and Pointer allow backslashes to be used to escape characters, so if you intend to include literal backslashes, you must escape them as well by doubling them in this attribute. The string is formatted by MSI first, and the result is consumed as the JSON Path or Pointer.</xs:documentation>

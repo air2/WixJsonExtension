@@ -46,13 +46,13 @@
   <ItemGroup>
     <Reference Include="Microsoft.Deployment.WindowsInstaller, Version=3.0.0.0, Culture=neutral, PublicKeyToken=ce35f76fcda82bad, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\Program Files (x86)\WiX Toolset v3.11\bin\Microsoft.Deployment.WindowsInstaller.dll</HintPath>
+      <HintPath>C:\Program Files (x86)\WiX Toolset v3.11\bin\Microsoft.Deployment.WindowsInstaller.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
     <Reference Include="wix">
-      <HintPath>..\..\..\..\..\Program Files (x86)\WiX Toolset v3.11\bin\wix.dll</HintPath>
+      <HintPath>C:\Program Files (x86)\WiX Toolset v3.11\bin\wix.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
